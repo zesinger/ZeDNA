@@ -43,6 +43,7 @@
             this.textDate = new System.Windows.Forms.TextBox();
             this.checkSound = new System.Windows.Forms.CheckBox();
             this.panelMap = new System.Windows.Forms.Panel();
+            this.buttonPrint = new System.Windows.Forms.Button();
             this.SuspendLayout();
             // 
             // listZones
@@ -116,7 +117,7 @@
             // button1
             // 
             this.button1.Font = new System.Drawing.Font("Microsoft Sans Serif", 15.75F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.button1.Location = new System.Drawing.Point(899, 93);
+            this.button1.Location = new System.Drawing.Point(899, 77);
             this.button1.Name = "button1";
             this.button1.Size = new System.Drawing.Size(229, 44);
             this.button1.TabIndex = 1;
@@ -151,6 +152,8 @@
             // checkSound
             // 
             this.checkSound.AutoSize = true;
+            this.checkSound.Checked = true;
+            this.checkSound.CheckState = System.Windows.Forms.CheckState.Checked;
             this.checkSound.Location = new System.Drawing.Point(947, 253);
             this.checkSound.Name = "checkSound";
             this.checkSound.Size = new System.Drawing.Size(123, 17);
@@ -166,11 +169,23 @@
             this.panelMap.Size = new System.Drawing.Size(469, 450);
             this.panelMap.TabIndex = 5;
             // 
+            // buttonPrint
+            // 
+            this.buttonPrint.Font = new System.Drawing.Font("Microsoft Sans Serif", 15.75F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.buttonPrint.Location = new System.Drawing.Point(899, 151);
+            this.buttonPrint.Name = "buttonPrint";
+            this.buttonPrint.Size = new System.Drawing.Size(229, 44);
+            this.buttonPrint.TabIndex = 6;
+            this.buttonPrint.Text = "Imprimer le tableau";
+            this.buttonPrint.UseVisualStyleBackColor = true;
+            this.buttonPrint.Click += new System.EventHandler(this.buttonPrint_Click);
+            // 
             // MainForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1146, 801);
+            this.Controls.Add(this.buttonPrint);
             this.Controls.Add(this.panelMap);
             this.Controls.Add(this.checkSound);
             this.Controls.Add(this.textDate);
@@ -201,6 +216,7 @@
         public System.Windows.Forms.TextBox textDate;
         public System.Windows.Forms.CheckBox checkSound;
         public System.Windows.Forms.Panel panelMap;
+        public System.Windows.Forms.Button buttonPrint;
     }
 }
 

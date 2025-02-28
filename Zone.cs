@@ -18,6 +18,10 @@ namespace ZeDNA
         /// les zones trouvées
         /// </summary>
         public List<Zone> Zones { get; set; }
+        /// <summary>
+        /// nombre de zones Rtba = début des zones supérieures dans la list
+        /// </summary>
+        public int? NRtba { get; set; }
     }
     /// <summary>
     /// Classe de stockage des zones trouvées dans le NOTAM

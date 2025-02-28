@@ -2,14 +2,23 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Printing;
 using System.IO;
 using System.Text.Json;
 using System.Windows.Forms;
+using PdfSharp.Drawing;
+using PdfSharp.Pdf;
+using static System.Windows.Forms.AxHost;
+using static OpenQA.Selenium.PrintOptions;
 
 namespace ZeDNA
 {
     public partial class MainForm : Form
     {
+        public static int M_version = 2;
+        public static int m_version = 0;
+        public static int p_version = 0;
+
         /// <summary>
         /// liste des zones actives sur la journée parsées depuis ce qui a été trouvé sur internet
         /// cette liste ne contient QUE les zones actives sur la journée et peut donc être nulle
@@ -21,22 +30,28 @@ namespace ZeDNA
         /// - timerop appelé tous les dixièmes de seconde pour changer l'affichage des cartes (cette fréquence est surtout due au
         ///   clignotement selon une sinusoïde de la zone survolée par la souris dans le tableau)
         /// </summary>
-        private System.Windows.Forms.Timer timer, timerop;
+        private Timer timer, timerop;
         /// <summary>
         /// liste des zones actives, cette liste contient tous les éléments surveillés, même ceux qui ne sont pas actifs sur la journée,
         /// un élément par élement du tableau `zoneList` de la classe GetData (donc pas le même nombre d'éléments que todayZones)
         /// </summary>
-        public static bool[] zoneActive;
+        public static bool[] zoneActive; // RTBA
         /// <summary>
         /// Numéro de l'élément survolé dans le tableau par la souris dans le tableau todayZones
         /// </summary>
         private int hoveredZone = -1;
+        /// <summary>
+        /// Nombre de zones RTBA (= début des zones supérieures)
+        /// </summary>
+        private int? nRtba = 0;
         /// <summary>
         /// Initialize les controls de la fenêtre, les arrays ainsi que les timers
         /// </summary>
         public MainForm()
         {
             InitializeComponent();
+            //todayuZones=GetData.GetUpperZones();
+            Text = "ZeDNA v" + M_version.ToString() + "." + m_version.ToString() + "." + p_version.ToString() + ": Activités des espaces militaires";
             // rend les colonnes de la list view à largeur fixe
             listZones.ColumnWidthChanging += (sender, e) =>
             {
@@ -273,14 +288,14 @@ namespace ZeDNA
                     // puis on recherche un fichier "notif.wav"
                     if (File.Exists("notif.wav"))
                     {
-                        var reader = new WaveFileReader("sound.wav");
+                        var reader = new WaveFileReader("notif.wav");
                         output.Init(reader);
                         sound = true;
                     }
                     // s'il n'existe pas, on recherche un fichier "noptif.mp3"
                     else if (File.Exists("notif.mp3"))
                     {
-                        var reader = new AudioFileReader("sound.mp3");
+                        var reader = new AudioFileReader("notif.mp3");
                         output.Init(reader);
                         sound = true;
                     }
@@ -288,7 +303,8 @@ namespace ZeDNA
                     if (sound) output.Play();
                 }
                 // et on affiche le message avec les alertes
-                MessageBox.Show(mes);
+                MessageBox.Show(mes, "Liste des changements:", MessageBoxButtons.OK, MessageBoxIcon.Information,
+                    MessageBoxDefaultButton.Button1, MessageBoxOptions.DefaultDesktopOnly);
             }
         }
         /// <summary>
@@ -311,6 +327,22 @@ namespace ZeDNA
             int ci = e.ColumnIndex - 1;
             Zone z = todayZones[e.ItemIndex];
             TimeSpan now = DateTime.UtcNow.TimeOfDay;
+            if (e.ItemIndex % 2 == 1)
+            {
+                // Fill the background with light gray
+                using (SolidBrush brush = new SolidBrush(Color.FromArgb(255, 240, 240, 240)))
+                {
+                    e.Graphics.FillRectangle(brush, e.Bounds);
+                }
+            }
+            else
+            {
+                // Fill with white for even rows
+                using (SolidBrush brush = new SolidBrush(Color.White))
+                {
+                    e.Graphics.FillRectangle(brush, e.Bounds);
+                }
+            }
             // si on est dans la colonne des noms
             if (ci == -1)
             {
@@ -330,7 +362,7 @@ namespace ZeDNA
                 if (idx == -1) name = z.Name;
                 else name = z.Name.Substring(0, idx);
                 idx = GetZoneIdx(name);
-                if (idx >=0) zoneActive[idx] = active;
+                if (idx >= 0) zoneActive[idx] = active;
                 // et on dessine le texte: si la zone est active, on l'affiche en gras et rouge
                 if (active) e.Graphics.DrawString(e.SubItem.Text, new Font(e.SubItem.Font, FontStyle.Bold), Brushes.Red, e.Bounds);
                 else e.Graphics.DrawString(e.SubItem.Text, new Font(e.SubItem.Font, FontStyle.Bold), Brushes.Black, e.Bounds);
@@ -341,11 +373,15 @@ namespace ZeDNA
                 DateTime deb = z.Deb[ci / 2];
                 DateTime fin = z.Fin[ci / 2];
                 // si toute la période est terminée on affiche en gris
-                if (fin.TimeOfDay < now) e.Graphics.DrawString(e.SubItem.Text, listZones.Font, Brushes.LightGray, e.Bounds);
+                if (fin.TimeOfDay < now) e.Graphics.DrawString(e.SubItem.Text, listZones.Font, new SolidBrush(Color.FromArgb(255, 200, 200, 200)), e.Bounds);
                 // si on est dans la période, on affiche en rouge et gras
                 else if (deb.TimeOfDay <= now) e.Graphics.DrawString(e.SubItem.Text, new Font(e.SubItem.Font, FontStyle.Bold), Brushes.Red, e.Bounds);
                 // sinon on est dans une période à venir, on l'affiche en noir
-                else e.DrawDefault = true;
+                else e.Graphics.DrawString(e.SubItem.Text, new Font(e.SubItem.Font, FontStyle.Regular), Brushes.Black, e.Bounds);
+            }
+            if (e.ItemIndex==nRtba)
+            {
+                e.Graphics.DrawLine(new Pen(Color.Green, 1), e.Bounds.Left, e.Bounds.Top, e.Bounds.Right, e.Bounds.Top);
             }
         }
         /// <summary>
@@ -360,7 +396,8 @@ namespace ZeDNA
             var zoneFile = new ZoneFile
             {
                 Date = GetData.dateData,
-                Zones = listZones
+                Zones = listZones,
+                NRtba = nRtba
             };
             var options = new JsonSerializerOptions { WriteIndented = true };
             string json = JsonSerializer.Serialize(zoneFile, options);
@@ -384,6 +421,8 @@ namespace ZeDNA
 
             GetData.dateData = zoneFile?.Date;
             if (GetData.dateData != null) textDate.Text = "Données affichées pour la journée du : " + GetData.dateData;
+            nRtba = zoneFile?.NRtba;
+            if (nRtba == null) nRtba = 0;
             return zoneFile?.Zones ?? new List<Zone>();
         }
         /// <summary>
@@ -403,18 +442,25 @@ namespace ZeDNA
             timer.Stop();
             // on récupère les données dans le NOTAM sur internet et on l'analyse
             List<Zone> tz = GetData.GetRtbaData();
+            nRtba = tz.Count;
+            List<Zone> tuz = GetData.GetUpperZones();
             // s'il n'y a pas de nouvelles données, on garde les anciennes, on redémarre les alertes et on quitte
-            if (tz == null)
+            if (tz == null && tuz == null)
             {
-                MessageBox.Show("Aucune donnée concernant les zones RTBA pour aujourd'hui n'a été trouvée dans les NOTAMs sur sofia-briefing, les anciennes valeurs ont été gardées");
+                MessageBox.Show("Aucune donnée concernant les zones militaires pour aujourd'hui n'a été trouvée dans les NOTAMs sur sofia-briefing, les anciennes valeurs ont été gardées");
                 timer.Start();
                 return;
             }
             // sinon, on définit toutes les zones comme inactives et listZones_DrawSubItem() se chargera de le remplir comme il faut
             for (int i = 0; i < zoneActive.Length; i++) zoneActive[i] = false;
-            todayZones = tz;
+            if (tz != null)
+            {
+                todayZones = tz;
+                if (tuz != null) todayZones.AddRange(tuz);
+            }
+            else todayZones = tuz;
             // on sauvegarde immédiatement les données recueillies sur internet pour éviter de les perdre en cas de plantage ou de quittage inopiné
-            SaveZonesToFile(tz, "zones2.json");
+            SaveZonesToFile(todayZones, "zones2.json");
             // on affiche la date des données
             if (GetData.dateData != "") textDate.Text = "Données affichées pour la journée du : " + GetData.dateData;
             else textDate.Text = "Pas de données chargées encore...";
@@ -438,6 +484,121 @@ namespace ZeDNA
             timer.Start();
         }
         /// <summary>
+        /// Bouton pour imprimer le contenu du tablea
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void buttonPrint_Click(object sender, EventArgs e)
+        {
+            int startX, startY;
+            startY = startX = 50;
+            int cellHeight = 30;
+            int[] columnWidths = { 210, 65, 65, 65, 65, 65, 65, 65, 65 }; // Adjust based on ListView columns
+
+            PdfDocument document = new PdfDocument();
+            document.Info.Title = "Table Export";
+
+            // Add a landscape page
+            PdfPage page = document.AddPage();
+            page.Orientation = PdfSharp.PageOrientation.Landscape;
+
+            // Create a graphics object for the page
+            XGraphics gfx = XGraphics.FromPdfPage(page);
+            double pageHeight = page.Height - startX; // Available height excluding margins
+
+            // Define fonts and pens
+            XFont font = new XFont("Arial", 10, XFontStyleEx.Regular);
+            XPen pen = new XPen(XColors.Black, 1);
+
+            // Draw table header
+            int x = startX;
+            int i = 0;
+            foreach (ColumnHeader column in listZones.Columns)
+            {
+                gfx.DrawRectangle(pen, x, startY, columnWidths[i], cellHeight);
+                gfx.DrawString(column.Text, font, XBrushes.Black, x + 5, startY +cellHeight/2+ 5);
+                x += columnWidths[i++];
+            }
+
+            // Draw table rows
+            startY += cellHeight;
+            while (rowIndex < listZones.Items.Count)
+            {
+                x = startX;
+                // Check if page is full
+                if (startY + cellHeight > pageHeight)
+                {
+                    page = document.AddPage();
+                    page.Orientation = PdfSharp.PageOrientation.Landscape;
+                    gfx = XGraphics.FromPdfPage(page);
+                    startY = startX; // Reset Y position for the new page
+                }
+                for (int col = 0; col < listZones.Columns.Count; col++)
+                {
+                    if (rowIndex % 2 == 1)
+                    {
+                        gfx.DrawRectangle(new XSolidBrush(XColors.LightGray), x, startY, columnWidths[col], cellHeight);
+                    }
+                    gfx.DrawRectangle(pen, x, startY, columnWidths[col], cellHeight);
+                    gfx.DrawString(listZones.Items[rowIndex].SubItems[col].Text, font, XBrushes.Black, x + 5, startY + 5 + cellHeight / 2);
+                    x += columnWidths[col];
+                }
+                startY += cellHeight;
+                rowIndex++;
+            }
+            string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            string filePath = Path.Combine(desktopPath, "zones_militaires.pdf");
+            document.Save(filePath);
+        }
+        private int rowIndex = 0; // Track printed rows
+        private void PrintDocument1_PrintPage(object sender, PrintPageEventArgs e)
+        {
+            int startX = 50, startY = 50, cellHeight = 30;
+            int[] columnWidths = { 300, 95, 95, 95, 95, 95, 95, 95, 95 }; // Adjust based on ListView columns
+
+            using (Pen pen = new Pen(Color.Black, 1))
+            using (Font font = new Font("Arial", 10))
+            {
+                // Draw table header
+                int x = startX;
+                int i = 0;
+                foreach (ColumnHeader column in listZones.Columns)
+                {
+                    e.Graphics.DrawRectangle(pen, x, startY, columnWidths[i], cellHeight);
+                    e.Graphics.DrawString(column.Text, font, Brushes.Black, x + 5, startY + 5);
+                    x += columnWidths[i++];
+                }
+
+                // Draw table rows
+                startY += cellHeight;
+                while (rowIndex < listZones.Items.Count)
+                {
+                    x = startX;
+                    for (int col = 0; col < listZones.Columns.Count; col++)
+                    {
+                        if (rowIndex % 2 == 1)
+                        {
+                            e.Graphics.FillRectangle(new SolidBrush(Color.LightGray), x, startY, columnWidths[col], cellHeight);
+                        }
+                        e.Graphics.DrawRectangle(pen, x, startY, columnWidths[col], cellHeight);
+                        e.Graphics.DrawString(listZones.Items[rowIndex].SubItems[col].Text, font, Brushes.Black, x + 5, startY + 5);
+                        x += columnWidths[col];
+                    }
+                    startY += cellHeight;
+                    rowIndex++;
+
+                    // Check if page is full
+                    if (startY + cellHeight > e.MarginBounds.Bottom)
+                    {
+                        e.HasMorePages = true;
+                        return;
+                    }
+                }
+                e.HasMorePages = false;
+            }
+        }
+
+        /// <summary>   
         /// Si la case des alertes messages n'est pas cochée, la case des alertes son est désactivée
         /// </summary>
         /// <param name="sender"></param>

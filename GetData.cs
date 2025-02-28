@@ -1,12 +1,13 @@
 ﻿using OpenQA.Selenium;
 using OpenQA.Selenium.Edge;
 using OpenQA.Selenium.Support.UI;
-using SeleniumExtras.WaitHelpers; 
+using SeleniumExtras.WaitHelpers;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 
 namespace ZeDNA
 {
@@ -99,12 +100,12 @@ namespace ZeDNA
                 // quoi qu'il arrive, on ferme la fenêtre de Edge
                 driver.Quit();
             }
-            
+
             // Si aucun résultat, on retourne null
             if (notamresult == "") return null;
             // exemple à retirer (utile pour les tests):
             //notamresult = "LFFA-Z0099/23\r\nDU: 01 06 2023 07:30 AU: 01 06 2023 23:59\r\nA)LFEE LFFF LFMM\r\nQ) LFXX / QRRCA / IV / BO / W / 000/085 / 4801N00521E099\r\nE) ZONES AIRFORCE RTBA ACT\r\nZONE R45A BOURGOGNE\r\n2007-2259:ACTIVE\r\nZONE R45B AUTUNOIS\r\n0800-1000:ACTIVE\r\n2007-2259:ACTIVE\r\nZONE R45C ARBOIS\r\n0800-1000:ACTIVE\r\n2007-2259:ACTIVE\r\nZONE R45S1 FRANCHE COMTE\r\n1500-2007:ACTIVE\r\nZONE R45S2 LANGRES\r\n1130-2359:ACTIVE\r\nZONE R45S3 YONNE\r\n0730-1000:ACTIVE\r\n1130-1330:ACTIVE\r\n1500-2359:ACTIVE\r\nZONE R45S4 MACONNAIS OUEST\r\n0730-1000:ACTIVE\r\n1130-1330:ACTIVE\r\n1500-2359:ACTIVE\r\nZONE R45S5 MACONNAIS CENTRE\r\n0730-1000:ACTIVE\r\n1130-1330:ACTIVE\r\n1500-2359:ACTIVE\r\nZONE R45S6.1 MACONNAIS NORD EST\r\n0730-1000:ACTIVE\r\n1130-1330:ACTIVE\r\n1500-2359:ACTIVE\r\nZONE R45S6.2 MACONNAIS SUD EST\r\n0730-1000:ACTIVE\r\n1130-1330:ACTIVE\r\n1500-2359:ACTIVE\r\nZONE R45S7 JURA\r\n0730-1000:ACTIVE\r\n1130-1330:ACTIVE\r\n1500-2359:ACTIVE\r\nZONE R69 CHAMPAGNE\r\n1130-1500:ACTIVE\r\n2007-2359:ACTIVE\r\nZONE R45NS\r\n1130-1500:ACTIVE\r\n2007-2359:ACTIVE\r\nF) SFC\r\nG) FL085\r\n";
-            
+
             // On va maintenant chercher le/s NOTAMs qui nous intéresse/nt, il/s commence/nt par "LFAA-Z"
             string finalresult = "";
             int offsNotam = notamresult.IndexOf("lffa-z", StringComparison.OrdinalIgnoreCase);
@@ -241,6 +242,97 @@ namespace ZeDNA
             }
             // on retourne la zone créée
             return zone;
+        }
+        /// <summary>
+        /// Va sur la page d'Eurocontrol https://www.public.nm.eurocontrol.int/PUBPORTAL/ pour récupérer l'activité
+        /// des zones supérieures 
+        /// </summary>
+        /// <returns></returns>
+        private static readonly (string docName, string ctrName)[] uzoneList = { ("euc25f","euc25f"), ("euc25s", "euc25s"), ("lft22", "tra22"),
+            ("lft23", "tra23"), ("lfr124","r124"), ("lfr322","r322"),("lfr323","r323")};
+        public static List<Zone> GetUpperZones()
+        {
+            var options = new EdgeOptions();
+            IWebDriver driver = new EdgeDriver(options);
+            WebDriverWait wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
+
+            List<Zone> UZones = new List<Zone>();
+
+            try
+            {
+                driver.Navigate().GoToUrl("https://www.public.nm.eurocontrol.int/PUBPORTAL/");
+
+                // Step 1: Find and click the latest available date div
+                string yesterday = DateTime.Now.AddDays(-1).ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
+                Thread.Sleep(3000);
+                var elements = wait.Until(d => d.FindElements(By.ClassName("eurocontrol_gwt_ext_linkEnabled")));
+
+                foreach (var element in elements)
+                {
+                    if (element.Text.StartsWith(yesterday))
+                    {
+                        element.Click();
+                        break;
+                    }
+                }
+
+                // Step 2: Wait for new window and switch to it
+                Thread.Sleep(2000);
+                wait.Until(d => d.WindowHandles.Count > 1);
+                driver.SwitchTo().Window(driver.WindowHandles.Last());
+
+                // Step 3: Find all RSA allocations at once
+                var rsaElements = driver.FindElements(By.XPath("//td[starts-with(@id, 'RESULTS_AREA.RSA_AREA.RSA_ALLOCATION_TABLE-RSA_COLUMN-')]"));
+
+                foreach (var rsaElement in rsaElements)
+                {
+                    string rsaName = rsaElement.Text.Trim();
+                    if (string.IsNullOrEmpty(rsaName)) continue;
+
+                    // Check if RSA name is in the list
+                    if (!uzoneList.Any(uz => rsaName.ToLower().Contains(uz.docName))) continue;
+
+                    int x = int.Parse(rsaElement.GetAttribute("id").Split('-').Last()); // Extract index
+
+                    // Find WEF (start time) and UNT (end time)
+                    string wefXPath = $"//td[@id='RESULTS_AREA.RSA_AREA.RSA_ALLOCATION_TABLE-WEF_COLUMN-{x}']";
+                    string untXPath = $"//td[@id='RESULTS_AREA.RSA_AREA.RSA_ALLOCATION_TABLE-UNT_COLUMN-{x}']";
+
+                    var wefElement = driver.FindElements(By.XPath(wefXPath)).FirstOrDefault();
+                    var untElement = driver.FindElements(By.XPath(untXPath)).FirstOrDefault();
+
+                    if (wefElement == null || untElement == null) continue;
+
+                    string wefTime = wefElement.Text.Trim();
+                    string untTime = untElement.Text.Trim();
+
+                    DateTime wefDateTime, untDateTime;
+                    if (!DateTime.TryParseExact(wefTime, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out wefDateTime)) continue;
+                    if (!DateTime.TryParseExact(untTime, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out untDateTime)) continue;
+
+                    // Find or create Zone
+                    Zone foundZone = UZones.FirstOrDefault(z => z.Name == rsaName) ?? new Zone(rsaName);
+                    int i = Array.FindIndex(foundZone.Deb, d => d == default);
+                    if (i == -1) continue; // Ignore if all slots are full
+
+                    foundZone.Deb[i] = wefDateTime;
+                    foundZone.Fin[i] = untDateTime;
+
+                    if (!UZones.Contains(foundZone))
+                        UZones.Add(foundZone);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error: {ex.Message}");
+                return null;
+            }
+            finally
+            {
+                driver.Quit();
+            }
+
+            return UZones.OrderBy(z => z.Name).ToList();
         }
     }
 }
