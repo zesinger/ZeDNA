@@ -581,9 +581,18 @@ namespace ZeDNA
             // - sinon on a une liste avec des éléments
             List<Zone> tz = GetData.GetRtbaData();
             int npareil = 0;
-            if (tz != null) nRtba = tz.Count;
+            if (tz.Count == 0)
+            {
+                // si non null (notams chargés) mais pas de résultat, on garde les anciennes valeurs
+                tz = toz;
+                npareil++;
+            }
+            else if (tz != null)
+                // si non null et des résultats trouvés, on met à jour avec les nouvelles valeurs
+                nRtba = tz.Count;
             else
             {
+                // si null, on affiche une erreur et on garde les vieilles valeurs
                 MessageBox.Show("Il y a eu un souci dans la récupération des RTBA, les anciennes valeurs sont conservées.");
                 tz = toz;
                 npareil++;

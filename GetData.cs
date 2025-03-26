@@ -176,8 +176,9 @@ namespace ZeDNA
                 // et on relance la recherche pour les NOTAM suivants contenant ce qui nous intéresse, s'il y en a plusieurs
                 offsNotam = notamresult.IndexOf("lffa-z", offsNotam + lenNotam, StringComparison.OrdinalIgnoreCase);
             }
-            // si aucun NOTAM correspondant n'a été trouvé, on retour null pour que les anciennes valeurs soient conservées
-            if (!messagefound) return null;
+            // si aucun NOTAM correspondant n'a été trouvé, on retour une liste vide pour que les anciennes valeurs soient conservées
+            // tant pis on ignore les zones supplémentaires
+            if (!messagefound) return new List<Zone>();
             // Parsing du résultat zone par zone
             List<Zone> zones = ParseZones(finalresult);
 
