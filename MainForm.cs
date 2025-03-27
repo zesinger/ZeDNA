@@ -22,7 +22,7 @@ namespace ZeDNA
     {
         public static int M_version = 2;
         public static int m_version = 2;
-        public static int p_version = 0;
+        public static int p_version = 1;
 
         /// <summary>
         /// liste des zones actives sur la journée parsées depuis ce qui a été trouvé sur internet
